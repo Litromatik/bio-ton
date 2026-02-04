@@ -283,12 +283,7 @@ async function showEquipmentModal(equipmentList, departments){
   }
 
   content.querySelector("#equipSearch").addEventListener("input", e => render(e.target.value));
-  content.querySelector("#equipRefresh").addEventListener("click", async ()=>{
-    const deptId = deptSelect.value || null;
-    currentList = await fetchEquipment(deptId);
-    render("");
-    toast("Список обновлён");
-  });
+  content.querySelector("#equipRefresh").addEventListener("click", async ()=>{ const deptId = deptSelect.value || null; currentList = await fetchEquipment(deptId); render(""); toast("Список обновлён"); });
   deptSelect.addEventListener("change", async ()=>{ const d = deptSelect.value || null; currentList = await fetchEquipment(d); render(""); });
   content.querySelector("#closeEquip").addEventListener("click", ()=> { modal.style.display = "none"; });
   render("");
@@ -324,13 +319,16 @@ document.addEventListener("DOMContentLoaded", ()=> {
     renderAll();
   });
 
-  bindTap(document.getElementById("syncBtn"), syncNow);
+  // safe sync button binding: wrapper checks for function existence
+  const syncBtnEl = document.getElementById("syncBtn");
+  bindTap(syncBtnEl, ()=>{ if(typeof syncNow === "function") syncNow(); else toast("Синхронизация недоступна"); });
+
   bindTap(document.getElementById("clearBtn"), ()=>{ if(confirm("Очистить очередь локально?")){ localStorage.removeItem(QUEUE_KEY); renderAll(); toast("Очередь очищена"); } });
 
   document.getElementById("filterBtn")?.addEventListener("click", renderAll);
   document.getElementById("qSearch")?.addEventListener("input", debounce(renderAll, 240));
 
-  window.addEventListener("online", ()=>{ setOnlineIndicator(true); toast("Онлайн — начинаю синк"); syncNow(); });
+  window.addEventListener("online", ()=>{ setOnlineIndicator(true); toast("Онлайн — начинаю синк"); if(typeof syncNow === "function") syncNow(); });
   window.addEventListener("offline", ()=>{ setOnlineIndicator(false); toast("Офлайн"); });
 });
 
@@ -338,6 +336,61 @@ document.addEventListener("DOMContentLoaded", ()=> {
 function setOnlineIndicator(v){ const txt = document.getElementById("statusText"); if(txt) txt.textContent = v? "online":"offline"; }
 function debounce(fn, t=200){ let to; return (...a)=>{ clearTimeout(to); to = setTimeout(()=> fn(...a), t); }; }
 function renderAll(){ renderCards(); }
+
+/* --- SYNC IMPLEMENTATION (новая функция, обязательно до init) --- */
+async function syncNow(){
+  try {
+    const q = readQueue();
+    if(!q || q.length === 0){
+      toast("Очередь пуста");
+      return;
+    }
+
+    // mark as syncing locally (do not mutate original array directly since updateItem/writeQueue will rerender)
+    q.forEach(it => updateItem(it.client_id, { status: "syncing", attempts: (it.attempts||0) + 1 }));
+
+    const payload = { requests: q.map(it => ({ ...it.payload, client_id: it.client_id, req_id: it.payload.req_id || null })) };
+    const headers = { "Content-Type": "application/json" };
+    if(window.MINI_APPS_API_KEY) headers["X-API-Key"] = window.MINI_APPS_API_KEY;
+
+    const res = await fetch(API_URL, {
+      method: "POST",
+      headers,
+      credentials: "same-origin",
+      body: JSON.stringify(payload)
+    });
+
+    if(!res.ok){
+      throw new Error("HTTP " + res.status);
+    }
+
+    const j = await res.json();
+    if(!j || !Array.isArray(j.results)){
+      throw new Error("Invalid response from server");
+    }
+
+    // Process results: remove successes, mark failures
+    const removed = [];
+    j.results.forEach(r => {
+      if(r && r.ok){
+        removed.push(r.client_id);
+      } else if(r){
+        updateItem(r.client_id, { status: "error", last_error: r.error || "server error" });
+      }
+    });
+
+    if(removed.length) removeByIds(removed);
+    toast("Синхронизация завершена");
+    renderAll();
+  } catch (err) {
+    console.error("syncNow error:", err);
+    // mark each item as error (write last_error)
+    const q = readQueue();
+    q.forEach(it => updateItem(it.client_id, { status: "error", last_error: String(err) }));
+    toast("Ошибка синхронизации");
+  }
+}
+/* --- end sync --- */
 
 /* --- ROBUST FALLBACK HANDLERS: attach immediately + delegation --- */
 (function attachRobustHandlers(){
@@ -463,6 +516,6 @@ window.toggleThemeUI = function(){
 (function init(){
   renderAll();
   setOnlineIndicator(navigator.onLine);
-  // periodic auto-sync when online
-  setInterval(()=>{ if(navigator.onLine) syncNow(); }, 10000);
+  // periodic auto-sync when online — guard for syncNow existence
+  setInterval(()=>{ if(navigator.onLine && typeof syncNow === "function") syncNow(); }, 10000);
 })();
