@@ -2,9 +2,9 @@
 // Положите этот файл в /static/app.js
 
 /* ===== CONFIGURATION ===== */
-const API_URL = "/api/requests";
-const DEPARTMENTS_URL = "/api/departments";
-const EQUIPMENT_URL = "/api/equipment";
+const API_URL = "http://localhost:8000/api/requests";
+const DEPARTMENTS_URL = "http://localhost:8000/api/departments";
+const EQUIPMENT_URL = "http://localhost:8000/api/equipment";
 
 const MAX_PHOTO_SIZE = 500 * 1024; // 500 KB
 const MAX_ATTEMPTS = 5;
@@ -637,3 +637,4 @@ function setOnlineIndicator(v) {
 
 // Initial status
 setOnlineIndicator(navigator.onLine);
+
