@@ -41,6 +41,14 @@ function debounce(fn, t = 200) {
     to = setTimeout(() => fn(...a), t); 
   }; 
 }
+async function fetchJSON(url) {
+    const headers = {
+        "X-API-Key": "qwertyuiop13"  // тот же ключ, что в бэкенде
+    };
+    const res = await fetch(url, { headers, credentials: "same-origin" });
+    if (!res.ok) throw new Error("HTTP " + res.status);
+    return res.json();
+}
 
 /* ===== TOAST HELPER ===== */
 function toast(msg, { ttl = 2500 } = {}) {
@@ -637,4 +645,5 @@ function setOnlineIndicator(v) {
 
 // Initial status
 setOnlineIndicator(navigator.onLine);
+
 
